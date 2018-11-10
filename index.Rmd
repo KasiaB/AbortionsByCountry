@@ -1,0 +1,211 @@
+---
+title: "Map of Abortions per Thousand People in Selected European Countries in 2016"
+author: "Katarzyna Bojarska"
+date: "2018 11 09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, collapse = T, message = F)
+```
+
+## The plot
+
+The plot demonstrates the number of abortions per thousand inhabitants in selected European contries, for which oficial data was available for the year 2016 at the website of the Council of Europe. More recent data was not yet available.
+
+```{r load_libraries, echo=FALSE}
+#load libraries
+library(leaflet)
+library(readr)
+library(geojsonio)
+library(sf)
+library(xlsx)
+library(stringr)
+```
+
+```{r acquire_abortions_data, echo=FALSE}
+#download the file containing the oficial abortion numbers
+if(!file.exists("./abortions.gz")) {
+    fileUrl1 <- "http://ec.europa.eu/eurostat/estat-navtree-portlet-prod/BulkDownloadListing?file=data/demo_fabort.tsv.gz"
+    download.file(fileUrl1, destfile = "./abortions.gz")}
+#read in the data of interest
+abortionsEu <- as.data.frame(read_tsv(gzfile("abortions.gz"),na=":")[1:40,1:2])
+#format the data
+colnames(abortionsEu)[1] <- "Country"
+colnames(abortionsEu)[2] <- "Abortions_2016"
+abortionsEu$Abortions_2016 <- as.numeric(abortionsEu$Abortions_2016)
+#subset the data to only include the countries for which data is available for 2016
+abortionsEu <- abortionsEu[!is.na(abortionsEu$Abortions_2016),]
+#extract only the country codes from the content of the cells
+abortionsEu$Country <- str_replace(abortionsEu$Country,"NR,TOTAL,","")
+abortionsEu <- abortionsEu[abortionsEu$Country != "DE_TOT",]
+```
+
+```{r acquire_merge_shapefile, echo=FALSE}
+#download and unpack shapefiles containing shapes of European countries
+if(!file.exists("./countries.geojson.zip")) {
+    fileUrl3 <- "https://ec.europa.eu/eurostat/cache/GISCO/distribution/v2/countries/download/ref-countries-2016-60m.geojson.zip"
+    download.file(fileUrl3, destfile = "./countries.geojson.zip")
+    kraje <- unzip(countries.geojson.zip)}
+#open the file
+countr <- geojsonio::geojson_read("CNTR_RG_60M_2016_4326.geojson", what = "sp")
+#format the data
+countr$Country <- as.character(countr$id)
+#identify the countries common for both datasets
+common <- is.element(countr$Country,abortionsEu$Country)
+#subset the spatial dataframe, so that it only contains the countries for which the abortion data is available
+data <- countr[common,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,abortionsEu,by="Country")
+```
+
+```{r acquire_merge_countrycodes, echo=FALSE}
+#download the dataset containing country codes and respective country names
+if(!file.exists("./countrycodes.csv")) {
+    fileUrl2 <- "https://datahub.io/core/country-list/r/data.csv"
+    download.file(fileUrl2, destfile = "./countrycodes.csv")}
+
+#read in the file
+countrycodes <- read.csv("countrycodes.csv")
+#format the content
+countrycodes$Country <- as.character(countrycodes$Code)
+codes_names <- countrycodes[,-2]
+#identify the countries common for both datasets
+wsp <- is.element(codes_names$Country,data$Country)
+#subset the country code dataset, so that it only contains the countries for which the abortion data is available
+codes_names <- codes_names[wsp,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,codes_names,by="Country")
+```
+
+```{r read_in_population_data, echo=FALSE}
+#read in the file containing population data for various countries for 2016
+popul <- read.xlsx("popul.xlsx",1)
+#format the data
+popul$Name <- as.character(popul$Name)
+popul$Name <- str_replace(popul$Name,"  ","")
+popul$Name <- str_replace(popul$Name," ","")
+#identify the countries common for both datasets
+co <- is.element(popul$Name,data$Name)
+#subset the dataset, so that it only contains the countries for which the abortion data is available
+popul <- popul[co,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,popul,by="Name")
+```
+
+```{r prepare_data_map, echo=FALSE}
+#calculate the yearly ratio of abortions per 1000 inhabitants
+data$abortions_per_thousand <- (data$Abortions_2016/data$Population2016)*1000
+
+#create palette for maping the values of the abortion rate
+pal <- colorNumeric("viridis", NULL)
+```
+
+```{r ploleaflet, echo=FALSE}
+#create the map of abortions
+leaflet(data) %>% addTiles() %>% addPolygons(stroke = FALSE, smoothFactor = 0.3, fillOpacity = 1,
+    fillColor = ~pal(abortions_per_thousand), label = ~paste0(Name, ": ", formatC(abortions_per_thousand, big.mark = ","))) %>%  addLegend(pal = pal, values = ~abortions_per_thousand, opacity = 1.0, position = "topleft", title = "<p>The Number of Abortions</p><p>per 1000 Inhabitants</p><p>in 2016</p>")
+```
+
+The greatest number of abortions per 1000 inhabitants were noted in Estonia and the lowest - in Poland.
+
+## The code
+```{r load_libraries1, eval=FALSE}
+#load libraries
+library(leaflet)
+library(readr)
+library(geojsonio)
+library(sf)
+library(xlsx)
+library(stringr)
+```
+
+```{r acquire_abortions_data1, eval=FALSE}
+#download the file containing the oficial abortion numbers
+if(!file.exists("./abortions.gz")) {
+    fileUrl1 <- "http://ec.europa.eu/eurostat/estat-navtree-portlet-prod/BulkDownloadListing?file=data/demo_fabort.tsv.gz"
+    download.file(fileUrl1, destfile = "./abortions.gz")}
+#read in the data of interest
+abortionsEu <- as.data.frame(read_tsv(gzfile("abortions.gz"),na=":")[1:40,1:2])
+#format the data
+colnames(abortionsEu)[1] <- "Country"
+colnames(abortionsEu)[2] <- "Abortions_2016"
+abortionsEu$Abortions_2016 <- as.numeric(abortionsEu$Abortions_2016)
+#subset the data to only include the countries for which data is available for 2016
+abortionsEu <- abortionsEu[!is.na(abortionsEu$Abortions_2016),]
+#extract only the country codes from the content of the cells
+abortionsEu$Country <- str_replace(abortionsEu$Country,"NR,TOTAL,","")
+abortionsEu <- abortionsEu[abortionsEu$Country != "DE_TOT",]
+```
+
+```{r acquire_merge_shapefile1, eval=FALSE}
+#download and unpack shapefiles containing shapes of European countries
+if(!file.exists("./countries.geojson.zip")) {
+    fileUrl3 <- "https://ec.europa.eu/eurostat/cache/GISCO/distribution/v2/countries/download/ref-countries-2016-60m.geojson.zip"
+    download.file(fileUrl3, destfile = "./countries.geojson.zip")
+    kraje <- unzip(countries.geojson.zip)}
+#open the file
+countr <- geojsonio::geojson_read("CNTR_RG_60M_2016_4326.geojson", what = "sp")
+#format the data
+countr$Country <- as.character(countr$id)
+#identify the countries common for both datasets
+common <- is.element(countr$Country,abortionsEu$Country)
+#subset the spatial dataframe, so that it only contains the countries for which the abortion data is available
+data <- countr[common,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,abortionsEu,by="Country")
+```
+
+```{r acquire_merge_countrycodes1, eval=FALSE}
+#download the dataset containing country codes and respective country names
+if(!file.exists("./countrycodes.csv")) {
+    fileUrl2 <- "https://datahub.io/core/country-list/r/data.csv"
+    download.file(fileUrl2, destfile = "./countrycodes.csv")}
+
+#read in the file
+countrycodes <- read.csv("countrycodes.csv")
+#format the content
+countrycodes$Country <- as.character(countrycodes$Code)
+codes_names <- countrycodes[,-2]
+#identify the countries common for both datasets
+wsp <- is.element(codes_names$Country,data$Country)
+#subset the country code dataset, so that it only contains the countries for which the abortion data is available
+codes_names <- codes_names[wsp,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,codes_names,by="Country")
+```
+
+```{r read_in_population_data1, eval=FALSE}
+#read in the file containing population data for various countries for 2016
+popul <- read.xlsx("popul.xlsx",1)
+#format the data
+popul$Name <- as.character(popul$Name)
+popul$Name <- str_replace(popul$Name,"  ","")
+popul$Name <- str_replace(popul$Name," ","")
+#identify the countries common for both datasets
+co <- is.element(popul$Name,data$Name)
+#subset the dataset, so that it only contains the countries for which the abortion data is available
+popul <- popul[co,]
+#merge data from both datasets
+require(sp)
+data <- merge(data,popul,by="Name")
+```
+
+```{r prepare_data_map1, eval=FALSE}
+#calculate the yearly ratio of abortions per 1000 inhabitants
+data$abortions_per_thousand <- (data$Abortions_2016/data$Population2016)*1000
+
+#create palette for maping the values of the abortion rate
+pal <- colorNumeric("viridis", NULL)
+```
+
+```{r ploleaflet1, eval=FALSE}
+#create the map of abortions
+leaflet(data) %>% addTiles() %>% addPolygons(stroke = FALSE, smoothFactor = 0.3, fillOpacity = 1,
+    fillColor = ~pal(abortions_per_thousand), label = ~paste0(Name, ": ", formatC(abortions_per_thousand, big.mark = ","))) %>%  addLegend(pal = pal, values = ~abortions_per_thousand, opacity = 1.0, position = "topleft", title = "<p>The Number of Abortions</p><p>per 1000 Inhabitants</p><p>in 2016</p>")
+```
